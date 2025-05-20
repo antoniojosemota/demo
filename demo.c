@@ -24,6 +24,38 @@
 #define SCREEN_ADDRESS 0x3C // Endereço I2C do display
 
 ssd1306_t display;
+volatile bool running = false;
+absolute_time_t start_time;
+int64_t elapsed_us = 0;
+
+void txt_display(int64_t sec){
+    char timer[128];
+    sniprintf(timer, sizeof(timer), "%.2f", sec / 1e6);
+    int x = strlen(timer) - 128 / 2;
+    ssd1306_clear(&display);
+    ssd1306_draw_string(&display, x, 30, 1, timer);
+    ssd1306_show(&display);
+}
+
+void gpio_callback(uint gpio, uint32_t events) {
+    if (gpio == BTN_A && (events & GPIO_IRQ_EDGE_FALL)) {
+        if (!running) {
+            running = true;
+            start_time = get_absolute_time();
+            gpio_put(LED_RED_PIN, 1);  // Liga LED vermelho
+        }
+    }
+
+    if (gpio == BTN_B && (events & GPIO_IRQ_EDGE_FALL)) {
+        if (running) {
+            running = false;
+            gpio_put(LED_RED_PIN, 0);  // Desliga LED vermelho
+            gpio_put(LED_GREEN_PIN, 1);  // Liga LED verde
+            printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
+            gpio_put(LED_GREEN_PIN, 0);
+        }
+    }
+}
 
 static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 {
@@ -139,7 +171,21 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 }
 
 void connect_server(){
+    struct tcp_pcb *server = tcp_new();
+    if (!server)
+    {
+        printf("Falha ao criar servidor TCP\n");
+    }
 
+    if (tcp_bind(server, IP_ADDR_ANY, 80) != ERR_OK)
+    {
+        printf("Falha ao associar servidor TCP à porta 80\n");
+    }
+
+    server = tcp_listen(server);
+    tcp_accept(server, tcp_server_accept);
+
+    printf("Servidor ouvindo na porta 80\n");
 }
 
 void setup(){
@@ -176,7 +222,7 @@ void setup(){
         printf("Falha ao inicializar o display SSD1306\n");
     }
 
-    while(cyw43_arch_init()){
+    /*while(cyw43_arch_init()){
         printf("Falha ao conectar ao Wi-Fi\n");
         sleep_ms(100);
         return;
@@ -198,7 +244,11 @@ void setup(){
     if(netif_default){
         printf("IP do Dispositivo: %s\n", ipaddr_ntoa(&netif_default->ip_addr));
     }
+    
+    */
 
+    gpio_set_irq_enabled_with_callback(BTN_A, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    gpio_set_irq_enabled(BTN_B, GPIO_IRQ_EDGE_FALL, true);
 
 }
 
@@ -222,9 +272,17 @@ void config_server(){
 
 int main()
 {
-    stdio_init_all();
+    setup();
+
+    ssd1306_clear(&display);
+    ssd1306_draw_string(&display, 10, 30, 1, "Ligadoo");
+    ssd1306_show(&display);
 
     while (true) {
-        cyw43_arch_poll();
+        if (running) {
+            elapsed_us = absolute_time_diff_us(start_time, get_absolute_time());
+        }
+        printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
+        txt_display(elapsed_us);
     }
 }
