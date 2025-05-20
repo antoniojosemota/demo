@@ -29,9 +29,9 @@ absolute_time_t start_time;
 int64_t elapsed_us = 0;
 
 void txt_display(int64_t sec){
-    char timer[128];
-    sniprintf(timer, sizeof(timer), "%.2f", sec / 1e6);
-    int x = strlen(timer) - 128 / 2;
+    char timer[32];
+    snprintf(timer, sizeof(timer), "%.2f", sec / 1e6);
+    int x = (128 - (strlen(timer) * 6)) / 2;
     ssd1306_clear(&display);
     ssd1306_draw_string(&display, x, 30, 1, timer);
     ssd1306_show(&display);
@@ -278,11 +278,17 @@ int main()
     ssd1306_draw_string(&display, 10, 30, 1, "Ligadoo");
     ssd1306_show(&display);
 
+    absolute_time_t last_update = get_absolute_time();
+
     while (true) {
         if (running) {
             elapsed_us = absolute_time_diff_us(start_time, get_absolute_time());
         }
-        printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
-        txt_display(elapsed_us);
+
+        if (absolute_time_diff_us(last_update, get_absolute_time()) > 100000) {
+            last_update = get_absolute_time();
+            printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
+            txt_display(elapsed_us);
     }
 }
+}   
