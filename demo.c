@@ -25,6 +25,122 @@
 
 ssd1306_t display;
 
+static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
+{
+    if (!p)
+    {
+        tcp_close(tpcb);
+        tcp_recv(tpcb, NULL);
+        return ERR_OK;
+    }
+
+    tcp_recved(tpcb,p->len);
+
+    char *request = (char *)malloc(p->len + 1);
+    memcpy(request, p->payload, p->len);
+    request[p->len] = '\0';
+
+    printf("Request: %s\n", request);
+
+    // Leitura do joystick
+    adc_select_input(0);
+    uint16_t x_value = adc_read();
+    adc_select_input(1);
+    uint16_t yy_value = adc_read();
+
+    bool buttonA = gpio_get(BTN_A);  // Lê direto
+    bool buttonB = gpio_get(BTN_B);  // Lê direto
+    const char *button_states = BTN_A ? "Solto" : "Pressionado";
+
+    adc_select_input(2);
+    uint16_t mic = adc_read();
+    mic = (mic * 100) / 4095; // Normaliza o valor para 0-100
+
+    // Resposta JSON se for /data
+    if (strstr(request, "GET /data") != NULL)
+    {
+        char json_body[128];
+        snprintf(json_body, sizeof(json_body), "{\"mic\": %d, \"button\": \"%s\"}", mic, button_states);
+
+        char json[256];
+        snprintf(json, sizeof(json),
+            "HTTP/1.1 200 OK\r\n"
+            "Connection: close\r\n" 
+            "Content-Type: application/json\r\n"
+            "Cache-Control: no-cache\r\n"
+            "Content-Length: %d\r\n"
+            "\r\n"
+            "%s",
+            (int)strlen(json_body), json_body);
+
+        tcp_write(tpcb, json, strlen(json), TCP_WRITE_FLAG_COPY);
+        tcp_output(tpcb);
+
+        tcp_close(tpcb);                             
+        tcp_recv(tpcb, NULL);
+
+        free(request);
+        pbuf_free(p);
+        return ERR_OK;
+    }
+
+    // Página HTML principal
+    char html[2048];
+    snprintf(html, sizeof(html),
+             "HTTP/1.1 200 OK\r\n"
+             "Connection: close\r\n" 
+             "Content-Type: text/html\r\n"
+             "Cache-Control: no-cache\r\n"
+             "\r\n"
+             "<!DOCTYPE html>\n"
+             "<html>\n"
+             "<head>\n"
+             "<title>Joystick Monitor</title>\n"
+             "<style>\n"
+             "body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }\n"
+             "h1 { font-size: 48px; }\n"
+             ".data { font-size: 36px; margin-top: 20px; }\n"
+             "</style>\n"
+             "<script>\n"
+             "function updateData() {\n"
+             "  fetch('/data').then(r => r.json()).then(data => {\n"
+             "    document.getElementById('mic').textContent = data.mic;\n"
+             "    document.getElementById('button').textContent = data.button;\n"
+             "    document.getElementById('x').textContent = data.x;\n"
+             "  });\n"
+             "}\n"
+             "setInterval(updateData, 1000);\n"
+             "window.onload = updateData;\n"
+             "</script>\n"
+             "</head>\n"
+             "<body>\n"
+             "<h1>Monitoramento</h1>\n"
+             "<div class=\"data\">Microfone: <span id=\"mic\">-</span></div>\n"
+             "<div class=\"data\">Estado do botão: <span id=\"button\">-</span></div>\n"
+             "<div class=\"data\">Direçãoj: <span id=\"x\">-</span></div>\n"
+             "</body>\n"
+             "</html>\n");
+
+    tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
+    tcp_output(tpcb);
+
+    tcp_close(tpcb);
+    tcp_recv(tpcb, NULL);
+    
+    free(request);
+    pbuf_free(p);
+    return ERR_OK;
+}
+
+static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
+{
+    tcp_recv(newpcb, tcp_server_recv);
+    return ERR_OK;
+}
+
+void connect_server(){
+
+}
 
 void setup(){
     stdio_init_all();
@@ -73,7 +189,11 @@ void setup(){
         return;
     }
 
+    cyw43_arch_gpio_put(LED_GREEN_PIN, 1);
     printf("Wi-Fi Conectado\n");
+    sleep_ms(1000);
+    cyw43_arch_gpio_put(LED_GREEN_PIN, 0);
+
 
     if(netif_default){
         printf("IP do Dispositivo: %s\n", ipaddr_ntoa(&netif_default->ip_addr));
@@ -82,13 +202,29 @@ void setup(){
 
 }
 
+void config_server(){
+    struct tcp_pcb *server = tcp_new();
+    if (!server)
+    {
+        printf("Falha ao criar servidor TCP\n");
+    }
+
+    if (tcp_bind(server, IP_ADDR_ANY, 80) != ERR_OK)
+    {
+        printf("Falha ao associar servidor TCP à porta 80\n");
+    }
+
+    server = tcp_listen(server);
+    tcp_accept(server, tcp_server_accept);
+
+    printf("Servidor ouvindo na porta 80\n");
+}
 
 int main()
 {
     stdio_init_all();
 
     while (true) {
-        printf("Hello, world!\n");
-        sleep_ms(1000);
+        cyw43_arch_poll();
     }
 }
