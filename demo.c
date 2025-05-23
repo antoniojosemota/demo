@@ -8,8 +8,8 @@
 #include "lwip/tcp.h"
 #include "lwip/netif.h"
 
-#define SSID_WIFI ""
-#define PASS_WIFI ""
+#define SSID_WIFI "20c"
+#define PASS_WIFI "12345678"
 
 #define BTN_A 5
 #define BTN_B 6
@@ -27,6 +27,15 @@ ssd1306_t display;
 volatile bool running = false;
 absolute_time_t start_time;
 int64_t elapsed_us = 0;
+int num_task = 0;
+
+typedef struct
+{
+    char state_button[50];
+    uint64_t time; 
+}datab;
+datab state;
+
 
 void txt_display(int64_t sec){
     char timer[32];
@@ -43,6 +52,7 @@ void gpio_callback(uint gpio, uint32_t events) {
             running = true;
             start_time = get_absolute_time();
             gpio_put(LED_RED_PIN, 1);  // Liga LED vermelho
+            strcpy(state.state_button, "Ativado");
         }
     }
 
@@ -53,6 +63,7 @@ void gpio_callback(uint gpio, uint32_t events) {
             gpio_put(LED_GREEN_PIN, 1);  // Liga LED verde
             printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
             gpio_put(LED_GREEN_PIN, 0);
+            strcpy(state.state_button, "Desligado");
         }
     }
 }
@@ -73,26 +84,15 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     request[p->len] = '\0';
 
     printf("Request: %s\n", request);
+    
+    absolute_time_t last_update_html = get_absolute_time();
 
-    // Leitura do joystick
-    adc_select_input(0);
-    uint16_t x_value = adc_read();
-    adc_select_input(1);
-    uint16_t yy_value = adc_read();
+    last_update_html = get_absolute_time();
 
-    bool buttonA = gpio_get(BTN_A);  // Lê direto
-    bool buttonB = gpio_get(BTN_B);  // Lê direto
-    const char *button_states = BTN_A ? "Solto" : "Pressionado";
-
-    adc_select_input(2);
-    uint16_t mic = adc_read();
-    mic = (mic * 100) / 4095; // Normaliza o valor para 0-100
-
-    // Resposta JSON se for /data
     if (strstr(request, "GET /data") != NULL)
     {
         char json_body[128];
-        snprintf(json_body, sizeof(json_body), "{\"mic\": %d, \"button\": \"%s\"}", mic, button_states);
+        snprintf(json_body, sizeof(json_body), "{\"sec\": %.2f, \"button\": \"%s\"}", elapsed_us / 1e6, state.state_button);
 
         char json[256];
         snprintf(json, sizeof(json),
@@ -136,20 +136,18 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
              "<script>\n"
              "function updateData() {\n"
              "  fetch('/data').then(r => r.json()).then(data => {\n"
-             "    document.getElementById('mic').textContent = data.mic;\n"
+             "    document.getElementById('sec').textContent = data.sec;\n"
              "    document.getElementById('button').textContent = data.button;\n"
-             "    document.getElementById('x').textContent = data.x;\n"
              "  });\n"
              "}\n"
-             "setInterval(updateData, 1000);\n"
+             "setInterval(updateData, 1);\n"
              "window.onload = updateData;\n"
              "</script>\n"
              "</head>\n"
              "<body>\n"
              "<h1>Monitoramento</h1>\n"
-             "<div class=\"data\">Microfone: <span id=\"mic\">-</span></div>\n"
+             "<div class=\"data\">Segundos: <span id=\"sec\">-</span></div>\n"
              "<div class=\"data\">Estado do botão: <span id=\"button\">-</span></div>\n"
-             "<div class=\"data\">Direçãoj: <span id=\"x\">-</span></div>\n"
              "</body>\n"
              "</html>\n");
 
@@ -168,24 +166,6 @@ static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
     tcp_recv(newpcb, tcp_server_recv);
     return ERR_OK;
-}
-
-void connect_server(){
-    struct tcp_pcb *server = tcp_new();
-    if (!server)
-    {
-        printf("Falha ao criar servidor TCP\n");
-    }
-
-    if (tcp_bind(server, IP_ADDR_ANY, 80) != ERR_OK)
-    {
-        printf("Falha ao associar servidor TCP à porta 80\n");
-    }
-
-    server = tcp_listen(server);
-    tcp_accept(server, tcp_server_accept);
-
-    printf("Servidor ouvindo na porta 80\n");
 }
 
 void setup(){
@@ -222,7 +202,7 @@ void setup(){
         printf("Falha ao inicializar o display SSD1306\n");
     }
 
-    /*while(cyw43_arch_init()){
+    /* while(cyw43_arch_init()){
         printf("Falha ao conectar ao Wi-Fi\n");
         sleep_ms(100);
         return;
@@ -243,9 +223,8 @@ void setup(){
 
     if(netif_default){
         printf("IP do Dispositivo: %s\n", ipaddr_ntoa(&netif_default->ip_addr));
-    }
+    } */
     
-    */
 
     gpio_set_irq_enabled_with_callback(BTN_A, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
     gpio_set_irq_enabled(BTN_B, GPIO_IRQ_EDGE_FALL, true);
@@ -274,15 +253,17 @@ int main()
 {
     setup();
 
-    ssd1306_clear(&display);
-    ssd1306_draw_string(&display, 10, 30, 1, "Ligadoo");
-    ssd1306_show(&display);
+    //config_server();
 
     absolute_time_t last_update = get_absolute_time();
+
+    num_task = 3;
+
 
     while (true) {
         if (running) {
             elapsed_us = absolute_time_diff_us(start_time, get_absolute_time());
+
         }
 
         if (absolute_time_diff_us(last_update, get_absolute_time()) > 100000) {
