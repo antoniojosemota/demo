@@ -38,9 +38,11 @@ int qntTasks = 5;
 typedef struct
 {
     char state_button[50];
-    uint64_t time; 
+    int id;
+    double time; 
 }datab;
-datab state;
+
+datab* state = NULL;
 
 
 void txt_display(int64_t sec){
@@ -53,27 +55,30 @@ void txt_display(int64_t sec){
 }
 
 void gpio_callback(uint gpio, uint32_t events) {
+    
     if (gpio == BTN_A && (events & GPIO_IRQ_EDGE_FALL)) {
+        
         if (!running) {
             running = true;
             running2 = true;
             start_time = get_absolute_time();
             start_time2 = get_absolute_time();
             gpio_put(LED_RED_PIN, 1);  // Liga LED vermelho
-            strcpy(state.state_button, "Ativado");
+            gpio_put(LED_GREEN_PIN, 0);  // Liga LED vermelho
+            strcpy(state->state_button, "Ativado");
         }
     }
 
     if (gpio == BTN_B && (events & GPIO_IRQ_EDGE_FALL)) {
+        
         if (running && running2) {
-
-            task_completed = true;
             
             elapsed_us2 = absolute_time_diff_us(start_time2, get_absolute_time());
             printf("Tempo da tarefa %d: %.2f segundos\n", num_task + 1,  elapsed_us2 / 1e6);
+            state[num_task].id = num_task + 1;
+            state[num_task].time = elapsed_us2 / 1e6;
             start_time2 = get_absolute_time();
             num_task += 1;
-            task_completed = false;
 
             if (num_task >= qntTasks){
                 num_task = 0;
@@ -87,9 +92,11 @@ void gpio_callback(uint gpio, uint32_t events) {
                 service_completed = false;
                 gpio_put(LED_RED_PIN, 0);  // Desliga LED vermelho
                 gpio_put(LED_GREEN_PIN, 1);  // Liga LED verde
+                for(int i = 0; i <= qntTasks; i++){
+                    printf("Tarefa %d: %.2f segundos\n", state[i].id, state[i].time);
+                }
                 printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
-                gpio_put(LED_GREEN_PIN, 0);
-                strcpy(state.state_button, "Desligado");
+                strcpy(state->state_button, "Desligado");
         }
     }
 }
@@ -119,7 +126,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     if (strstr(request, "GET /data") != NULL)
     {
         char json_body[128];
-        snprintf(json_body, sizeof(json_body), "{\"sec\": %.2f, \"button\": \"%s\"}", elapsed_us / 1e6, state.state_button);
+        snprintf(json_body, sizeof(json_body), "{\"sec\": %.2f, \"button\": \"%s\"}", elapsed_us / 1e6, state->state_button);
 
         char json[256];
         snprintf(json, sizeof(json),
@@ -229,7 +236,7 @@ void setup(){
         printf("Falha ao inicializar o display SSD1306\n");
     }
 
-    while(cyw43_arch_init()){
+/*     while(cyw43_arch_init()){
         printf("Falha ao conectar ao Wi-Fi\n");
         sleep_ms(100);
         return;
@@ -251,7 +258,7 @@ void setup(){
     if(netif_default){
         printf("IP do Dispositivo: %s\n", ipaddr_ntoa(&netif_default->ip_addr));
     }
-    
+     */
 
     gpio_set_irq_enabled_with_callback(BTN_A, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
     gpio_set_irq_enabled(BTN_B, GPIO_IRQ_EDGE_FALL, true);
@@ -281,6 +288,8 @@ int main()
     setup();
 
     //config_server();
+
+    state = malloc((qntTasks *2) * sizeof(int));
 
     absolute_time_t last_update = get_absolute_time();
 
