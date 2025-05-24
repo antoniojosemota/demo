@@ -25,9 +25,15 @@
 
 ssd1306_t display;
 volatile bool running = false;
+volatile bool running2 = false;
+volatile bool task_completed = false;
+volatile bool service_completed = false;
 absolute_time_t start_time;
+absolute_time_t start_time2;
 int64_t elapsed_us = 0;
+int64_t elapsed_us2 = 0;
 int num_task = 0;
+int qntTasks = 5;
 
 typedef struct
 {
@@ -50,26 +56,47 @@ void gpio_callback(uint gpio, uint32_t events) {
     if (gpio == BTN_A && (events & GPIO_IRQ_EDGE_FALL)) {
         if (!running) {
             running = true;
+            running2 = true;
             start_time = get_absolute_time();
+            start_time2 = get_absolute_time();
             gpio_put(LED_RED_PIN, 1);  // Liga LED vermelho
             strcpy(state.state_button, "Ativado");
         }
     }
 
     if (gpio == BTN_B && (events & GPIO_IRQ_EDGE_FALL)) {
-        if (running) {
-            running = false;
-            gpio_put(LED_RED_PIN, 0);  // Desliga LED vermelho
-            gpio_put(LED_GREEN_PIN, 1);  // Liga LED verde
-            printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
-            gpio_put(LED_GREEN_PIN, 0);
-            strcpy(state.state_button, "Desligado");
+        if (running && running2) {
+
+            task_completed = true;
+            
+            elapsed_us2 = absolute_time_diff_us(start_time2, get_absolute_time());
+            printf("Tempo da tarefa %d: %.2f segundos\n", num_task + 1,  elapsed_us2 / 1e6);
+            start_time2 = get_absolute_time();
+            num_task += 1;
+            task_completed = false;
+
+            if (num_task >= qntTasks){
+                num_task = 0;
+                service_completed = true;
+            }
+
+            if(service_completed){
+                elapsed_us = absolute_time_diff_us(start_time, get_absolute_time()); // <-- Adicione isso
+                running = false;
+                running2 = false; 
+                service_completed = false;
+                gpio_put(LED_RED_PIN, 0);  // Desliga LED vermelho
+                gpio_put(LED_GREEN_PIN, 1);  // Liga LED verde
+                printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
+                gpio_put(LED_GREEN_PIN, 0);
+                strcpy(state.state_button, "Desligado");
         }
     }
 }
+}
 
-static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
-{
+
+static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err){
     if (!p)
     {
         tcp_close(tpcb);
@@ -162,11 +189,11 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     return ERR_OK;
 }
 
-static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
-{
+static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err){
     tcp_recv(newpcb, tcp_server_recv);
     return ERR_OK;
 }
+
 
 void setup(){
     stdio_init_all();
@@ -202,7 +229,7 @@ void setup(){
         printf("Falha ao inicializar o display SSD1306\n");
     }
 
-    /* while(cyw43_arch_init()){
+    while(cyw43_arch_init()){
         printf("Falha ao conectar ao Wi-Fi\n");
         sleep_ms(100);
         return;
@@ -223,7 +250,7 @@ void setup(){
 
     if(netif_default){
         printf("IP do Dispositivo: %s\n", ipaddr_ntoa(&netif_default->ip_addr));
-    } */
+    }
     
 
     gpio_set_irq_enabled_with_callback(BTN_A, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
@@ -257,18 +284,15 @@ int main()
 
     absolute_time_t last_update = get_absolute_time();
 
-    num_task = 3;
-
 
     while (true) {
-        if (running) {
+        if (running && running2) {
             elapsed_us = absolute_time_diff_us(start_time, get_absolute_time());
 
         }
 
         if (absolute_time_diff_us(last_update, get_absolute_time()) > 100000) {
             last_update = get_absolute_time();
-            printf("Tempo: %.2f segundos\n", elapsed_us / 1e6);
             txt_display(elapsed_us);
     }
 }
