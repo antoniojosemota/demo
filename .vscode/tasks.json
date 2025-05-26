@@ -18,12 +18,30 @@
             }
         },
         {
+            "label": "Enter Bootsel",
+            "type": "process",
+            "command": "${env:HOME}/.pico-sdk/picotool/2.1.0/picotool/picotool",
+            "args": [
+                "reboot", 
+                "-f", 
+                "-u"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/picotool/2.1.0/picotool/picotool.exe"
+            },
+        },
+        {
             "label": "Run Project",
             "type": "process",
-            "command": "${env:HOME}/.pico-sdk/picotool/2.1.1/picotool/picotool",
+            "command": "${env:HOME}/.pico-sdk/picotool/2.1.0/picotool/picotool",
             "args": [
-                "load",
-                "${command:raspberry-pi-pico.launchTargetPath}",
+                "load", 
+                "${command:raspberry-pi-pico.launchTargetPath}", 
                 "-fx"
             ],
             "presentation": {
@@ -32,8 +50,9 @@
             },
             "problemMatcher": [],
             "windows": {
-                "command": "${env:USERPROFILE}/.pico-sdk/picotool/2.1.1/picotool/picotool.exe"
-            }
+                "command": "${env:USERPROFILE}/.pico-sdk/picotool/2.1.0/picotool/picotool.exe"
+            },
+            "dependsOn": ["Enter Bootsel"]
         },
         {
             "label": "Flash",
@@ -51,7 +70,7 @@
             ],
             "problemMatcher": [],
             "windows": {
-                "command": "${env:USERPROFILE}/.pico-sdk/openocd/0.12.0+dev/openocd.exe",
+                "command": "${env:USERPROFILE}/.pico-sdk/openocd/0.12.0+dev/openocd.exe"
             }
         }
     ]

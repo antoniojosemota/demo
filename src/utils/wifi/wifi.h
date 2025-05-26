@@ -2,8 +2,8 @@
 #define WIFI_H
 
 // wifi credentials
-#define WIFI_SSID "MARIA JULIA"
-#define WIFI_PASS "medjugorje"
+#define WIFI_SSID "SUA REDE"
+#define WIFI_PASS "SUA SENHA"
 
 // definitions functions
 int wifi_connect();
